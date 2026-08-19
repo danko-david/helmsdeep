@@ -1,0 +1,24 @@
+
+hd_prepare()
+{
+	kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.7/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+	kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.7/docs/content/reference/dynamic-configuration/kubernetes-crd-rbac.yml
+}
+
+hd_var_defaults()
+{
+	PATH=${PATH:-/}
+}
+
+ingress_http()
+{
+	_rh_try_ret_help 'Deploys traefik as daemonset, HTTP ingress with web endpoint (good for developement)'
+	hd_prepare
+	hd_env_apply_config daemonset_http_only.yml
+}
+
+ing_srv_host()
+{
+	_rh_try_ret_help '(With the name $INGRESS_NAME=site) Bind INGRESS_HOST=site.k8s.intra.net to $SERVICE=service $PORT=80'
+	hd_env_apply_config ingress_service_on_host.yml
+}

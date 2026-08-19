@@ -1,0 +1,113 @@
+#!/bin/bash
+
+# Linuxengineerings lxe helper script
+# Used to wrap custom callable cli functions inside one script
+############################# RH helper functions ##############################
+
+HELPER_ROOT=$(dirname $(readlink -f $0))
+
+# Uncomment if your script should run in the directory this script is located.
+cd $HELPER_ROOT
+
+source ./lib.hd
+
+list_units()
+{
+	_rh_try_ret_help 'List units'
+	cd $HELPER_ROOT
+	find units/ | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
+}
+
+u()
+{
+	_rh_try_ret_help 'Run unit file'
+	cd $HELPER_ROOT
+	unit="./units/$1/u.hd"
+	HD_UNIT_DIR=./units/$1
+	if [ ! -f "$unit" ]
+	then
+		echo "Unit \"$1\" does not exists"
+		echo ""
+		echo "Available units:"
+		list_units
+		exit 1
+	fi
+	shift
+
+	source $unit
+	unset u
+	unset list_units
+	lxe_launch_helper "$@"
+}
+
+
+_rh_try_ret_help()
+{
+	if [ ! -z $RH_RUNTIME_REQUEST_HELP ]
+	then
+		echo $1
+		exit 1;
+	fi
+}
+
+############################ RH built-in functions #############################
+
+help()
+{
+	_rh_try_ret_help "Prints help with the list of all annotated functions"
+
+cat <<EOF
+Linuxengineering helper script.
+This is a wrapper script that lets you collect functions for CLI use.
+Specify one function from the following:
+EOF
+	RH_RUNTIME_REQUEST_HELP=true
+
+	for f in ${RH_FUNCTIONS[@]}
+	do
+		# if the command has help
+		if type $f | grep -qzP '{\s+_rh_try_ret_help '
+		then
+			echo -e "\t$f - "$($f)
+		fi
+	done
+}
+
+############################## Application area ################################
+
+
+lxe_launch_helper()
+{
+	# Collection available commands
+
+	RH_FUNCTIONS=()
+
+	for func in `typeset -F | grep -Po '(?<=-f).*$' | sort`
+	do
+		RH_FUNCTIONS+=($func);
+	done
+
+	# print help if nothing specified
+
+	if [ $# '<' '1' ]
+	then
+		help
+		exit 1
+	fi
+
+	# run command
+	for f in ${RH_FUNCTIONS[@]}
+	do
+		if [ "$1" "=" "$f" ]
+		then
+			$f "${@:2}"
+			exit $?
+		fi
+	done
+
+	echo "Helper function $1 not found, so now printing help..."
+	help
+	exit 1
+}
+
+lxe_launch_helper "$@"

@@ -1,0 +1,33 @@
+#!/bin/bash
+
+hd_glob_var_init()
+{
+	NAMESPACE=${NAMESPACE:-default}
+}
+
+hd_manage_vars()
+{
+	set -a
+	if [ "function" = "$(type -t hd_var_defaults)" ]
+	then
+		hd_var_defaults
+	fi
+
+	if [ "function" = "$(type -t hd_glob_var_init)" ]
+	then
+		hd_glob_var_init
+	fi
+
+	set +a
+}
+
+hd_apply_config()
+{
+	cat $HD_UNIT_DIR/$1 | envsubst | kubectl apply -f -
+}
+
+hd_env_apply_config()
+{
+	hd_manage_vars
+	hd_apply_config $1
+}

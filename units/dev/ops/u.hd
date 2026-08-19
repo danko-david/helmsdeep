@@ -1,0 +1,173 @@
+
+dump_state()
+{
+    _rh_try_ret_help 'Dumps kubernetes current state'
+   # Ensure kubectl is installed and available
+    if ! command -v kubectl &> /dev/null; then
+        echo "[ERROR] 'kubectl' command line tool not found in PATH."
+        return 1
+    fi
+
+    local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    local BACKUP_DIR="k8s_full_backup_${TIMESTAMP}"
+    
+    echo "=========================================================="
+    echo "[INFO] STARTING DYNAMIC KUBERNETES CLUSTER DUMP"
+    echo "[INFO] Backup target directory: ${BACKUP_DIR}"
+    echo "=========================================================="
+    
+    mkdir -p "${BACKUP_DIR}"
+
+    # 1. Discover all API resources that support the 'list' verb (both Cluster and Namespaced scope)
+    echo "[INFO] Querying live Kubernetes API for discoverable resources..."
+    local API_RESOURCES
+    API_RESOURCES=$(kubectl api-resources --verbs=list --namespaced=false -o name; \
+                    kubectl api-resources --verbs=list --namespaced=true -o name)
+
+    # Clean the resource list by removing runtime-only metrics and temporary security resources
+    local RESOURCES
+    RESOURCES=$(echo "${API_RESOURCES}" | sort -u | grep -vE '^(events|componentstatuses|podmetrics|nodemetrics|tokenreviews|subjectaccessreviews|selfsubjectrulesreviews|selfsubjectaccessreviews)$')
+
+    local RESOURCE_COUNT=$(echo "${RESOURCES}" | wc -l)
+    echo "[INFO] Successfully discovered ${RESOURCE_COUNT} unique resource types."
+    echo "----------------------------------------------------------"
+
+    # 2. Iterate through every discovered resource type and dump its state
+    for resource in ${RESOURCES}; do
+        echo " -> Backing up API resource: ${resource}"
+        
+        # Pull all instances across all namespaces into a dedicated YAML manifest
+        kubectl get "${resource}" --all-namespaces -o yaml --ignore-not-found=true > "${BACKUP_DIR}/${resource}.yaml" 2>/dev/null || true
+        
+        # If no instances of this resource exist in the cluster, delete the empty file
+        if [ ! -s "${BACKUP_DIR}/${resource}.yaml" ]; then
+            rm -f "${BACKUP_DIR}/${resource}.yaml"
+        else
+            # RELIABILITY CLEANUP: Strip runtime-specific cluster metadata (UIDs, versions, timestamps)
+            # This ensures the output manifests can be cleanly applied ('kubectl apply') during a later restore
+            sed -i '/resourceVersion:/d; /uid:/d; /creationTimestamp:/d; /generation:/d; /selfLink:/d' "${BACKUP_DIR}/${resource}.yaml" 2>/dev/null || true
+            
+            # Strip operational status blocks to keep definitions declarative
+            sed -i '/^status:/,/^[a-zA-Z]/ { /^status:/d; /^[[:space:]]/d }' "${BACKUP_DIR}/${resource}.yaml" 2>/dev/null || true
+        fi
+    done
+
+    echo "----------------------------------------------------------"
+    echo "[INFO] Compression stage starting..."
+    
+    # 3. Package the final safe output directory into a single tarball
+    tar -czf "${BACKUP_DIR}.tar.gz" "${BACKUP_DIR}"
+    rm -rf "${BACKUP_DIR}"
+
+    echo "=========================================================="
+    echo "[SUCCESS] Cluster dump complete and prepared for restore!"
+    echo "[SUCCESS] Output archive: ${BACKUP_DIR}.tar.gz"
+    echo "=========================================================="
+}
+
+restore()
+{
+    _rh_try_ret_help 'Restores kubernetes cluster state from backup file'
+	# Ensure a backup file was passed as an argument
+    if [ -z "$1" ]; then
+        echo "[ERROR] Missing argument. Usage: restore_kubernetes_cluster <backup_file.tar.gz>"
+        return 1
+    fi
+
+    local BACKUP_FILE="$1"
+
+    # Ensure kubectl is installed and available
+    if ! command -v kubectl &> /dev/null; then
+        echo "[ERROR] 'kubectl' command line tool not found in PATH."
+        return 1
+    fi
+
+    # Check if the backup archive actually exists
+    if [ ! -f "$BACKUP_FILE" ]; then
+        echo "[ERROR] Backup file '${BACKUP_FILE}' not found."
+        return 1
+    fi
+
+    local TMP_RESTORE_DIR="k8s_restore_tmp_$(date +%Y%m%d_%H%M%S)"
+    
+    echo "=========================================================="
+    echo "[INFO] STARTING KUBERNETES CLUSTER RESTORE"
+    echo "[INFO] Source archive: ${BACKUP_FILE}"
+    echo "=========================================================="
+
+    # 1. Extract the backup tarball to a temporary workspace
+    mkdir -p "${TMP_RESTORE_DIR}"
+    echo "[INFO] Extracting archive data..."
+    tar -xzf "${BACKUP_FILE}" -C "${TMP_RESTORE_DIR}" --strip-components=1
+
+    # 2. Phase-based Restoration Order
+    # Applying resources in a strategic sequence prevents dependency race conditions
+    echo "[INFO] Commencing phase-based manifest restoration..."
+    echo "----------------------------------------------------------"
+
+    # Phase 1: Core Cluster Infrastructure (Namespaces & Custom Resource Definitions)
+    echo "[PHASE 1] Deploying Core Infrastructure (Namespaces & CRDs)..."
+    for resource_type in namespaces customresourcedefinitions; do
+        if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
+            echo " -> Applying: ${resource_type}"
+            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" --server-side || true
+        fi
+    done
+
+    # Give the Kubernetes API server a brief moment to register newly applied CRDs
+    echo "[INFO] Pausing 5 seconds for API server schema synchronization..."
+    sleep 5
+
+    # Phase 2: Security & Configuration (RBAC, Secrets, ConfigMaps)
+    echo "[PHASE 2] Applying Security Policies, Configurations & RBAC..."
+    for resource_type in serviceaccounts clusterroles clusterrolebindings roles rolebindings secrets configmaps; do
+        if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
+            echo " -> Applying: ${resource_type}"
+            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+        fi
+    done
+
+    # Phase 3: Networking Foundations (Services, IngressClasses, Storage)
+    echo "[PHASE 3] Rebuilding Networking & Storage Services..."
+    for resource_type in services ingressclasses persistentvolumeclaims storageclasses; do
+        if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
+            echo " -> Applying: ${resource_type}"
+            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+        fi
+    done
+
+    # Phase 4: Core Compute Workloads (DaemonSets, Deployments, StatefulSets)
+    echo "[PHASE 4] Resurrecting Workloads (Deployments, DaemonSets, StatefulSets)..."
+    for resource_type in daemonsets deployments statefulsets; do
+        if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
+            echo " -> Applying: ${resource_type}"
+            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+        fi
+    done
+
+    # Phase 5: Routing, Extensions & Custom Objects (Traefik IngressRoutes, Middlewares, IPFSSites)
+    echo "[PHASE 5] Mapping Application Routing & Custom Resources..."
+    # Exclude previously applied resource types to filter only for custom resources (CRDs)
+    local APPLIED_TYPES="namespaces customresourcedefinitions serviceaccounts clusterroles clusterrolebindings roles rolebindings secrets configmaps services ingressclasses persistentvolumeclaims storageclasses daemonsets deployments statefulsets"
+    
+    for yaml_file in "${TMP_RESTORE_DIR}"/*.yaml; do
+        [ -e "$yaml_file" ] || continue
+        local filename=$(basename "$yaml_file" .yaml)
+        
+        # Check if this specific resource type has already been restored in an earlier phase
+        if [[ ! " ${APPLIED_TYPES} " =~ " ${filename} " ]]; then
+            echo " -> Applying custom resource: ${filename}"
+            kubectl apply -f "$yaml_file" || true
+        fi
+    done
+
+    # 3. Workspace Cleanup
+    echo "----------------------------------------------------------"
+    echo "[INFO] Cleaning up temporary workspace..."
+    rm -rf "${TMP_RESTORE_DIR}"
+
+    echo "=========================================================="
+    echo "[SUCCESS] Cluster restoration process finalized!"
+    echo "[WARNING] Monitor 'kubectl get pods -A' to ensure proper scheduling."
+    echo "=========================================================="
+}

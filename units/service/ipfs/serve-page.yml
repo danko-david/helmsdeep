@@ -1,0 +1,39 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ${INGRESS_NAME}-ipfs-web-ingressroute
+  namespace: default
+  annotations:
+    ingress_name: "${INGRESS_NAME}"
+    ingress_host: "${INGRESS_HOST}"
+    ipfs_cid: "${IPFS_CID}"
+    ipfs_cid_type: "${IPFS_CID_TYPE}"
+    ipfs_cid_pin: "${IPFS_CID_PIN}"
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`${INGRESS_HOST}`)
+    kind: Rule
+    services:
+    - name: ipfs-service
+      port: 8080
+    middlewares:
+    - name: ${INGRESS_NAME}-ipfs-host-fix
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${INGRESS_NAME}-ipfs-host-fix
+  namespace: default
+  annotations:
+    ingress_name: "${INGRESS_NAME}"
+    ingress_host: "${INGRESS_HOST}"
+    ipfs_cid: "${IPFS_CID}"
+    ipfs_cid_type: "${IPFS_CID_TYPE}"
+    ipfs_cid_pin: "${IPFS_CID_PIN}"
+spec:
+  headers:
+    customRequestHeaders:
+      Host: "${IPFS_CID}.${IPFS_CID_TYPE}.localhost:8080"
+      X-Forwarded-Host: ""

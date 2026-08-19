@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: universal-debug-pod
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: universal-debug
+  template:
+    metadata:
+      labels:
+        app: universal-debug
+    spec:
+      containers:
+      - name: debug-container
+        image: lxeu/devops-build-image:latest
+        command: ["tail", "-f", "/dev/null"]
+        ports:
+        - containerPort: 80
+        - containerPort: 8080
+        - containerPort: 8081
+        - containerPort: 3000
+        - containerPort: 5000
+        - containerPort: 8000
+        - containerPort: 9000
+        - containerPort: 5001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: universal-debug-service
+  namespace: default
+spec:
+  selector:
+    app: universal-debug
+  ports:
+  - name: port-80
+    protocol: TCP
+    port: 80
+    targetPort: 80
+  - name: port-8080
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: port-8081
+    protocol: TCP
+    port: 8081
+    targetPort: 8081
+  - name: port-3000
+    protocol: TCP
+    port: 3000
+    targetPort: 3000
+  - name: port-5000
+    protocol: TCP
+    port: 5000
+    targetPort: 5000
+  - name: port-8000
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+  - name: port-9000
+    protocol: TCP
+    port: 9000
+    targetPort: 9000
+  - name: port-5001
+    protocol: TCP
+    port: 5001
+    targetPort: 5001
+

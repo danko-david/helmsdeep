@@ -1,0 +1,84 @@
+
+hd_var_defaults()
+{
+	IPFS_CID_TYPE=${IPFS_CID_TYPE:-ipfs}
+	IPFS_CID_PIN=${IPFS_CID_PIN:-true}
+}
+
+pin()
+{
+	_rh_try_ret_help 'Pins ipfs pages where pinning is requested (ipfs_cfd_pin annotation is true)'
+	echo "=========================================================="
+    echo "[INFO] STARTING CONDITION-BASED IPFS PINNING SYNCHRONIZATION"
+    echo "=========================================================="
+
+    # 1. Query all IngressRoutes and filter for matching annotations using a custom go-template
+    # It loops over items, looks for the pin trigger, and outputs the CID only if pin == "true"
+    echo "[INFO] Scanning cluster for IngressRoutes with ipfs_cid_pin=true..."
+    local FILTER_TEMPLATE='{{range .items}}{{if .metadata.annotations.ipfs_cid}}{{if eq .metadata.annotations.ipfs_cid_pin "true"}}{{.metadata.annotations.ipfs_cid}}{{"\n"}}{{end}}{{end}}{{end}}'
+    
+    local RAW_CIDS
+    RAW_CIDS=$(kubectl get ingressroutes --all-namespaces -o go-template="${FILTER_TEMPLATE}" 2>/dev/null)
+
+    # Clean the output to get unique CIDs and strip empty lines
+    local CIDS
+    CIDS=$(echo "${RAW_CIDS}" | tr ' ' '\n' | grep -v '^$' | sort -u)
+
+    if [ -z "${CIDS}" ]; then
+        echo "[INFO] No IngressRoutes found with 'ipfs_cid_pin: \"true\"'. Nothing to pin."
+        echo "=========================================================="
+        return 0
+    fi
+
+    echo "[INFO] Target CIDs identified for verified pinning:"
+    echo "${CIDS}"
+    echo "----------------------------------------------------------"
+
+    # 2. Locate active IPFS DaemonSet pods running inside the cluster
+    echo "[INFO] Locating running IPFS cluster pods..."
+    local IPFS_PODS
+    IPFS_PODS=$(kubectl get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+
+    if [ -z "${IPFS_PODS}" ]; then
+        echo "[ERROR] No active IPFS daemon pods found matching label 'app=ipfs' in namespace 'default'."
+        echo "=========================================================="
+        return 1
+    fi
+
+    echo "[INFO] Active IPFS processing pods found:"
+    echo "${IPFS_PODS}"
+    echo "----------------------------------------------------------"
+
+    # 3. Deploy background pinned synchronization commands concurrently across nodes
+    echo "[INFO] Dispatching async pin commands to target nodes..."
+    for cid in ${CIDS}; do
+        echo " >> Processing asset hash: ${cid}"
+        for pod in ${IPFS_PODS}; do
+            echo "    -> Queueing job inside pod: ${pod}"
+            
+            # Send the execution block to background (&) to populate all storage hosts simultaneously
+            kubectl exec -i "${pod}" -n default -- ipfs pin add "${cid}" >/dev/null 2>&1 &
+        done
+    done
+
+    # Block terminal progress until all multi-threaded background pinning sub-processes conclude 
+    echo "⏳ Awaiting network data synchronization across all distributed storage hosts..."
+    wait
+
+    echo "=========================================================="
+    echo "[SUCCESS] Pinned content synchronization sequence finalized!"
+    echo "=========================================================="
+}
+
+service()
+{
+	_rh_try_ret_help 'Deploy IPFS node into k8s cluster as a daemonset, global service.'
+	hd_env_apply_config ipfs.yml
+}
+
+serve_page()
+{
+	_rh_try_ret_help 'Serve an IPFS node as site eg: $INGRESS_NAME=maven $INGRESS_HOST=maven.k8s.intra.net IPFS_CID=bafybeibamkzqsjwbvkj5igauuvliffqebdgn2ydiyqt3idpd3vh7hd55nu'
+	hd_env_apply_config serve-page.yml
+}
+

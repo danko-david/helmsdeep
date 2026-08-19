@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ipfs-node
+  namespace: default
+  labels:
+    app: ipfs
+spec:
+  selector:
+    matchLabels:
+      app: ipfs
+  template:
+    metadata:
+      labels:
+        app: ipfs
+    spec:
+      containers:
+      - name: ipfs
+        image: ipfs/kubo:latest
+        env:
+        - name: IPFS_PATH
+          value: /data/ipfs
+        ports:
+        - name: gateway
+          containerPort: 8080
+        # Maybe a volume for /data/ipfs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipfs-service
+  namespace: default
+spec:
+  selector:
+    app: ipfs
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+
