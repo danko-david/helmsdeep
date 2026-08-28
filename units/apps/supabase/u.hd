@@ -8,5 +8,6 @@ hd_prepare()
 deploy()
 {
 	_rh_try_ret_help 'Deploy supabase with default configs'
-	helm install supabase-demo supabase/supabase -f supabase-values.yml --namespace default
+	helm install supabase-demo supabase/supabase --namespace default
+	# -f supabase-values.yml
 }

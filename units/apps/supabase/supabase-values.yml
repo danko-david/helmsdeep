@@ -1,6 +1,3 @@
-# supabase-values.yaml
-
-# Alapértelmezett beépített Ingress-ek kikapcsolása (Traefik-et fogunk használni helyette)
 ingress:
   enabled: false
 
@@ -8,11 +5,9 @@ studio:
   ingress:
     enabled: false
 
-# Generálj egy erős, egyedi titkos kulcsot a JWT tokenek aláírásához!
 jwt:
   secret: "SUPER-SECRET-JWT-KEY-REPLACE-ME-NOW-12345"
 
-# Adatbázis konfiguráció (Alapértelmezetten a chart indít egy PostgreSQL-t)
 postgres:
   enabled: true
   dbUser: "supabase_admin"

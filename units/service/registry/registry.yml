@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ipfs-pvc
+  name: registry-pvc
   namespace: ${NAMESPACE}
 spec:
   accessModes:
@@ -11,48 +11,45 @@ spec:
       storage: ${STORAGE_SIZE}
 ---
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
-  name: ipfs-node
+  name: registry-deployment
   namespace: ${NAMESPACE}
   labels:
-    app: ipfs
+    app: registry
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      app: ipfs
+      app: registry
   template:
     metadata:
       labels:
-        app: ipfs
+        app: registry
     spec:
       containers:
-      - name: ipfs
-        image: ipfs/kubo:latest
-        env:
-        - name: IPFS_PATH
-          value: /data/ipfs
+      - name: registry
+        image: registry:latest
         ports:
-        - name: gateway
-          containerPort: 8080
+        - containerPort: 5000
+          name: registry-port
         volumeMounts:
-        - name: ipfs-data
-          mountPath: /data/ipfs
+        - name: registry-data
+          mountPath: /var/lib/registry
       volumes:
-      - name: ipfs-data
+      - name: registry-data
         persistentVolumeClaim:
-          claimName: ipfs-pvc
+          claimName: registry-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ipfs-service
+  name: registry-service
   namespace: ${NAMESPACE}
 spec:
   selector:
-    app: ipfs
+    app: registry
   ports:
   - protocol: TCP
-    port: 8080
-    targetPort: 8080
-
+    port: 5000
+    targetPort: 5000

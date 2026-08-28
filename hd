@@ -37,6 +37,7 @@ u()
 	source $unit
 	unset u
 	unset list_units
+	unset k
 	lxe_launch_helper "$@"
 }
 

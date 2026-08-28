@@ -2,11 +2,6 @@
 dump_state()
 {
     _rh_try_ret_help 'Dumps kubernetes current state'
-   # Ensure kubectl is installed and available
-    if ! command -v kubectl &> /dev/null; then
-        echo "[ERROR] 'kubectl' command line tool not found in PATH."
-        return 1
-    fi
 
     local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     local BACKUP_DIR="k8s_full_backup_${TIMESTAMP}"
@@ -21,8 +16,8 @@ dump_state()
     # 1. Discover all API resources that support the 'list' verb (both Cluster and Namespaced scope)
     echo "[INFO] Querying live Kubernetes API for discoverable resources..."
     local API_RESOURCES
-    API_RESOURCES=$(kubectl api-resources --verbs=list --namespaced=false -o name; \
-                    kubectl api-resources --verbs=list --namespaced=true -o name)
+    API_RESOURCES=$(k api-resources --verbs=list --namespaced=false -o name; \
+                    k api-resources --verbs=list --namespaced=true -o name)
 
     # Clean the resource list by removing runtime-only metrics and temporary security resources
     local RESOURCES
@@ -37,7 +32,7 @@ dump_state()
         echo " -> Backing up API resource: ${resource}"
         
         # Pull all instances across all namespaces into a dedicated YAML manifest
-        kubectl get "${resource}" --all-namespaces -o yaml --ignore-not-found=true > "${BACKUP_DIR}/${resource}.yaml" 2>/dev/null || true
+        k get "${resource}" --all-namespaces -o yaml --ignore-not-found=true > "${BACKUP_DIR}/${resource}.yaml" 2>/dev/null || true
         
         # If no instances of this resource exist in the cluster, delete the empty file
         if [ ! -s "${BACKUP_DIR}/${resource}.yaml" ]; then
@@ -76,12 +71,6 @@ restore()
 
     local BACKUP_FILE="$1"
 
-    # Ensure kubectl is installed and available
-    if ! command -v kubectl &> /dev/null; then
-        echo "[ERROR] 'kubectl' command line tool not found in PATH."
-        return 1
-    fi
-
     # Check if the backup archive actually exists
     if [ ! -f "$BACKUP_FILE" ]; then
         echo "[ERROR] Backup file '${BACKUP_FILE}' not found."
@@ -110,7 +99,7 @@ restore()
     for resource_type in namespaces customresourcedefinitions; do
         if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
             echo " -> Applying: ${resource_type}"
-            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" --server-side || true
+            k apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" --server-side || true
         fi
     done
 
@@ -123,7 +112,7 @@ restore()
     for resource_type in serviceaccounts clusterroles clusterrolebindings roles rolebindings secrets configmaps; do
         if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
             echo " -> Applying: ${resource_type}"
-            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+            k apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
         fi
     done
 
@@ -132,7 +121,7 @@ restore()
     for resource_type in services ingressclasses persistentvolumeclaims storageclasses; do
         if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
             echo " -> Applying: ${resource_type}"
-            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+            k apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
         fi
     done
 
@@ -141,7 +130,7 @@ restore()
     for resource_type in daemonsets deployments statefulsets; do
         if [ -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" ]; then
             echo " -> Applying: ${resource_type}"
-            kubectl apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
+            k apply -f "${TMP_RESTORE_DIR}/${resource_type}.yaml" || true
         fi
     done
 
@@ -157,7 +146,7 @@ restore()
         # Check if this specific resource type has already been restored in an earlier phase
         if [[ ! " ${APPLIED_TYPES} " =~ " ${filename} " ]]; then
             echo " -> Applying custom resource: ${filename}"
-            kubectl apply -f "$yaml_file" || true
+            k apply -f "$yaml_file" || true
         fi
     done
 

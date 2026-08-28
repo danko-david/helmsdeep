@@ -1,5 +1,22 @@
 #!/bin/bash
 
+k()
+{
+	_rh_try_ret_help 'Shorthand runner for kubectl which can receive extra settings from ENV'
+	# Ensure kubectl is installed and available
+	if ! command -v kubectl &> /dev/null; then
+		echo "[ERROR] 'kubectl' command line tool not found in PATH."
+		return 1
+	fi
+
+	if [ -z "$K8S_CLUSTER" ]
+	then
+		kubectl "$@"
+	else
+		kubectl --context=$K8S_CLUSTER "$@"
+	fi
+}
+
 hd_glob_var_init()
 {
 	NAMESPACE=${NAMESPACE:-default}
@@ -23,7 +40,7 @@ hd_manage_vars()
 
 hd_apply_config()
 {
-	cat $HD_UNIT_DIR/$1 | envsubst | kubectl apply -f -
+	cat $HD_UNIT_DIR/$1 | envsubst | k apply -f -
 }
 
 hd_env_apply_config()

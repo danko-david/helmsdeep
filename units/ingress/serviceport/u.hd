@@ -1,0 +1,13 @@
+
+hd_var_defaults()
+{
+	TYPE=${TYPE:-TCP} # Or UDP or TLS
+	BIND_ADDRESS=${BIND_ADDRESS:-0.0.0.0}
+}
+
+ingress_port()
+{
+	_rh_try_ret_help 'Ingress TYPE=(TCP|UDP) $PORT on host to SERVICE and SERVICE_PORT'
+	export TYPE_LOW=$(tr '[:upper:]' '[:lower:]' <<< "$TYPE")
+	hd_env_apply_config ingress_port.yml
+}

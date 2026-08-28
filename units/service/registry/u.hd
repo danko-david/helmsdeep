@@ -1,0 +1,12 @@
+
+hd_var_defaults()
+{
+    export STORAGE_SIZE=${STORAGE_SIZE:-20Gi}
+}
+
+deploy_registry()
+{
+	_rh_try_ret_help 'Deploy docker image registry'
+	hd_env_apply_config registry.yml
+}
+

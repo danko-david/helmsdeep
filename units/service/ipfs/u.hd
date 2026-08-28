@@ -3,6 +3,7 @@ hd_var_defaults()
 {
 	IPFS_CID_TYPE=${IPFS_CID_TYPE:-ipfs}
 	IPFS_CID_PIN=${IPFS_CID_PIN:-true}
+    export STORAGE_SIZE=${STORAGE_SIZE:-20Gi}
 }
 
 pin()
@@ -18,7 +19,7 @@ pin()
     local FILTER_TEMPLATE='{{range .items}}{{if .metadata.annotations.ipfs_cid}}{{if eq .metadata.annotations.ipfs_cid_pin "true"}}{{.metadata.annotations.ipfs_cid}}{{"\n"}}{{end}}{{end}}{{end}}'
     
     local RAW_CIDS
-    RAW_CIDS=$(kubectl get ingressroutes --all-namespaces -o go-template="${FILTER_TEMPLATE}" 2>/dev/null)
+    RAW_CIDS=$(k get ingressroutes --all-namespaces -o go-template="${FILTER_TEMPLATE}" 2>/dev/null)
 
     # Clean the output to get unique CIDs and strip empty lines
     local CIDS
@@ -37,7 +38,7 @@ pin()
     # 2. Locate active IPFS DaemonSet pods running inside the cluster
     echo "[INFO] Locating running IPFS cluster pods..."
     local IPFS_PODS
-    IPFS_PODS=$(kubectl get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
 
     if [ -z "${IPFS_PODS}" ]; then
         echo "[ERROR] No active IPFS daemon pods found matching label 'app=ipfs' in namespace 'default'."
@@ -57,7 +58,7 @@ pin()
             echo "    -> Queueing job inside pod: ${pod}"
             
             # Send the execution block to background (&) to populate all storage hosts simultaneously
-            kubectl exec -i "${pod}" -n default -- ipfs pin add "${cid}" >/dev/null 2>&1 &
+            k exec -i "${pod}" -n default -- ipfs pin add "${cid}" >/dev/null 2>&1 &
         done
     done
 
@@ -70,7 +71,72 @@ pin()
     echo "=========================================================="
 }
 
-service()
+ipfs_gc()
+{
+    _rh_try_ret_help 'Unpin unreferenced CIDs and run GC on IPFS'
+
+    echo "=========================================================="
+    echo "[INFO] STARTING PRODUCTION IPFS GARBAGE COLLECTION SEQUENCE"
+    echo "=========================================================="
+
+    # 1. Collect all active whitelisted CIDs from live IngressRoute annotations across all namespaces
+    echo "[INFO] Gathering valid CIDs from live IngressRoute annotations..."
+    local VALID_CIDS
+    VALID_CIDS=$(k get ingressroutes --all-namespaces -o jsonpath='{.items[*].metadata.annotations.ipfs_cid}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sort -u)
+
+    # Safety mechanism: Abort if no whitelisted CIDs are found to prevent accidental data loss
+    if [ -z "${VALID_CIDS}" ]; then
+        echo "[WARNING] No valid ipfs_cid annotations found in the cluster."
+        echo "[WARNING] To prevent data loss, GC will NOT proceed without a valid whitelist."
+        echo "=========================================================="
+        return 1
+    fi
+
+    echo "[INFO] Whitelisted CIDs that will be preserved:"
+    echo "${VALID_CIDS}"
+    echo "----------------------------------------------------------"
+
+    # 2. Locate active IPFS DaemonSet pods running inside the cluster
+    echo "[INFO] Locating running IPFS cluster pods..."
+    local IPFS_PODS
+    IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+
+    if [ -z "${IPFS_PODS}" ]; then
+        echo "[ERROR] No active IPFS daemon pods found in namespace 'default'."
+        return 1
+    fi
+
+    # 3. Iterate through each IPFS pod/node to audit pinned states and free disk storage
+    for pod in ${IPFS_PODS}; do
+        echo "Processing node storage on pod: ${pod}"
+        
+        # Extract all 'recursive' pins (manually or programmatically pinned root blocks) from the pod
+        local CURRENT_PINS
+        CURRENT_PINS=$(k exec -i "${pod}" -n default -- ipfs pin ls --type=recursive 2>/dev/null | awk '{print $1}')
+        
+        # Verify if there are active pins to analyze on the current storage host
+        if [ ! -z "${CURRENT_PINS}" ]; then
+            for pinned_hash in ${CURRENT_PINS}; do
+                # Unpin any cached asset that is missing from the global K8s configuration whitelist
+                if ! echo "${VALID_CIDS}" | grep -q "${pinned_hash}"; then
+                    echo "   -> [UNPIN] Orphaned CID found: ${pinned_hash}. Removing pin..."
+                    k exec -i "${pod}" -n default -- ipfs pin rm "${pinned_hash}" >/dev/null 2>&1 || true
+                fi
+            done
+        fi
+
+        # 4. Trigger physical repository garbage collection sequentially to manage disk I/O performance
+        echo "   -> [GC] Running repository garbage collection on ${pod}..."
+        k exec -i "${pod}" -n default -- ipfs repo gc >/dev/null 2>&1
+        echo "   -> [SUCCESS] Node ${pod} storage successfully optimized."
+    done
+
+    echo "=========================================================="
+    echo "[SUCCESS] Global IPFS Garbage Collection completed!"
+    echo "=========================================================="
+}
+
+deploy_service()
 {
 	_rh_try_ret_help 'Deploy IPFS node into k8s cluster as a daemonset, global service.'
 	hd_env_apply_config ipfs.yml
@@ -82,3 +148,109 @@ serve_page()
 	hd_env_apply_config serve-page.yml
 }
 
+IPFS()
+{
+    _rh_try_ret_help 'ipfs wrapper, you can specify IPFS_API=/ip4/127.0.0.1/tcp/5001'
+    if [ -z "$IPFS_API" ]
+    then
+        ipfs "$@"
+    else
+        ipfs --api="$IPFS_API" "$@"
+    fi
+}
+
+deploy_folder_to_ipfs()
+{
+    _rh_try_ret_help 'Takes $1 dir, uploads to ipfs, If PRE_PIN is true, pins before, then deploy to the specified $2 host, wtih $3 ingress name'
+    local TARGET_DIR="$1"
+    local INGRESS_HOST="$2"
+    local INGRESS_NAME="$3"
+
+    # 1. Validation checks
+    if [ -z "$TARGET_DIR" ] || [ -z "$INGRESS_HOST" ] || [ -z "$INGRESS_NAME" ]; then
+        echo "[ERROR] Missing arguments."
+        echo "Usage: deploy_folder_to_ipfs <folder_path> <ingress_host> <ingress_name>"
+        return 1
+    fi
+
+    if [ ! -d "$TARGET_DIR" ]; then
+        echo "[ERROR] Target directory '${TARGET_DIR}' does not exist."
+        return 1
+    fi
+
+    if ! command -v ipfs &> /dev/null; then
+        echo "[ERROR] Local 'ipfs' command line tool not found in PATH."
+        return 1
+    fi
+
+    if ! command -v kubectl &> /dev/null; then
+        echo "[ERROR] 'kubectl' command line tool not found in PATH."
+        return 1
+    fi
+
+    echo "=========================================================="
+    echo "[INFO] STARTING IPFS FOLDER DEPLOYMENT SEQUENCE"
+    echo "[INFO] Source Directory : ${TARGET_DIR}"
+    echo "[INFO] Ingress Host     : ${INGRESS_HOST}"
+    echo "[INFO] Ingress Name     : ${INGRESS_NAME}"
+    echo "=========================================================="
+
+    # 2. Upload folder to local IPFS node and extract the root directory CID
+    echo "[INFO] Uploading folder to IPFS..."
+    # The last line of 'ipfs add -r -q' output always contains the root directory hash
+    local IPFS_ADD_OUTPUT
+    IPFS_ADD_OUTPUT=$(IPFS add -r -q "$TARGET_DIR")
+    
+    local NEW_CID
+    NEW_CID=$(echo "$IPFS_ADD_OUTPUT" | tail -n 1)
+
+    if [ -z "$NEW_CID" ]; then
+        echo "[ERROR] IPFS upload failed or returned an empty CID."
+        return 1
+    fi
+
+    echo "[SUCCESS] Folder successfully uploaded to IPFS."
+    echo "[INFO] Generated Root CID: ${NEW_CID}"
+    echo "----------------------------------------------------------"
+
+    # 3. Handle Pre-Pinning sequence if PRE_PIN environment variable is enabled
+    if [ ! -z "$PRE_PIN" ]; then
+        echo "[PRE-PIN] Pre-pinning flag detected. Synchronizing storage hosts before routing updates..."
+        
+        # Locate active IPFS DaemonSet pods inside the cluster
+        local IPFS_PODS
+        IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+
+        if [ -z "$IPFS_PODS" ]; then
+            echo "[ERROR] No active IPFS daemon pods found. Cannot execute pre-pinning task."
+            return 1
+        fi
+
+        # Dispatch async pin operations simultaneously across all nodes
+        for pod in $IPFS_PODS; do
+            echo "   -> Async pinning CID inside pod: ${pod}..."
+            k exec -i "$pod" -n default -- ipfs pin add "$NEW_CID" >/dev/null 2>&1 &
+        done
+
+        # Block progress until all background execution threads conclude safely
+        echo "⏳ Awaiting explicit storage node cache verification..."
+        wait
+        echo "[PRE-PIN] Content successfully synchronized across all cluster nodes."
+        echo "----------------------------------------------------------"
+    fi
+
+    # 4. Prepare environment context and trigger your existing deployment pipeline
+    echo "[INFO] Exporting environment variables for declarative rendering..."
+    export INGRESS_NAME="${INGRESS_NAME}"
+    export INGRESS_HOST="${INGRESS_HOST}"
+    export IPFS_CID="${NEW_CID}"
+    export IPFS_CID_TYPE="ipfs" # Standard configuration type fallback
+
+    echo "[INFO] Invoking structural 'serve_page' routine..."
+    serve_page
+
+    echo "=========================================================="
+    echo "[SUCCESS] LIVE DEPLOYMENT FINALIZED!"
+    echo "[SUCCESS] URL: http://${INGRESS_HOST}"
+    echo "=========================================================="
+}

@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vprofile-db
+  namespace: ${NAMESPACE}
+  labels:
+    app: vprofile-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vprofile-db
+  template:
+    metadata:
+      labels:
+        app: vprofile-db
+    spec:
+      containers:
+      - name: vprofile-db
+        image: vprofile/vprofiledb:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "vprofiledbpass"
+        ports:
+        - containerPort: 3306
+          name: dbport
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vprodb
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app: vprofile-db
+  ports:
+  - protocol: TCP
+    port: 3306
+    targetPort: 3306
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vprofile-cache
+  namespace: ${NAMESPACE}
+  labels:
+    app: vprofile-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vprofile-cache
+  template:
+    metadata:
+      labels:
+        app: vprofile-cache
+    spec:
+      containers:
+      - name: vprofile-cache
+        image: memcached:alpine
+        ports:
+        - containerPort: 11211
+          name: cacheport
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vprocache
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app: vprofile-cache
+  ports:
+  - protocol: TCP
+    port: 11211
+    targetPort: 11211
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vprofile-mq
+  namespace: ${NAMESPACE}
+  labels:
+    app: vprofile-mq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vprofile-mq
+  template:
+    metadata:
+      labels:
+        app: vprofile-mq
+    spec:
+      containers:
+      - name: vprofile-mq
+        image: rabbitmq:3-management-alpine
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          value: "guest"
+        - name: RABBITMQ_DEFAULT_PASS
+          value: "guest"
+        ports:
+        - containerPort: 5672
+          name: mqport
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpromq01
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app: vprofile-mq
+  ports:
+  - protocol: TCP
+    port: 5672
+    targetPort: 5672
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vprofile-app
+  namespace: ${NAMESPACE}
+  labels:
+    app: vprofile-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vprofile-app
+  template:
+    metadata:
+      labels:
+        app: vprofile-app
+    spec:
+      initContainers:
+      - name: wait-for-services
+        image: alpine:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Waiting for backend services to boot..."
+          until nc -z vprodb 3306 && nc -z vprocache 11211 && nc -z vpromq01 5672; do
+            sleep 3
+          done
+          echo "All backend services are up!"
+      containers:
+      - name: vprofile-app
+        image: vprofile/vprofileapp:latest
+        ports:
+        - containerPort: 8080
+          name: appport
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vprofile-app-service
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app: vprofile-app
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+
