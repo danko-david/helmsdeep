@@ -7,24 +7,35 @@
 HELPER_ROOT=$(dirname $(readlink -f $0))
 
 # Uncomment if your script should run in the directory this script is located.
-cd $HELPER_ROOT
 
-source ./lib.hd
+source ${HELPER_ROOT}/lib.hd
 
 list_units()
 {
 	_rh_try_ret_help 'List units'
-	cd $HELPER_ROOT
-	find units/ | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
+	find ${HELPER_ROOT}/units/ | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
+
+	if [ -d "${HOME}/.lxe/hd/units" ]
+	then
+		echo ""
+		echo "Custom units in ~/.lxe/hd/units:"
+		find ${HOME}/.lxe/hd/units | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
+	fi
 }
 
 u()
 {
 	_rh_try_ret_help 'Run unit file'
-	cd $HELPER_ROOT
-	unit="./units/$1/u.hd"
-	HD_UNIT_DIR=./units/$1
-	if [ ! -f "$unit" ]
+	unit="${HELPER_ROOT}/units/$1/u.hd"
+	HD_UNIT_DIR="${HELPER_ROOT}/units/$1"
+
+	if [ -e "${HOME}/.lxe/hd/units/$1/u.hd" ]
+	then
+		unit="${HOME}/.lxe/hd/units/$1/u.hd"
+		HD_UNIT_DIR="${HOME}/.lxe/hd/units/$1"
+	fi
+
+	if [ ! -e "$unit" ]
 	then
 		echo "Unit \"$1\" does not exists"
 		echo ""
