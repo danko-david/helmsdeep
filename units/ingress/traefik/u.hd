@@ -7,7 +7,8 @@ hd_prepare()
 
 hd_var_defaults()
 {
-	PATH=${PATH:-/}
+	export PATH=${PATH:-/}
+	export INGRESS_ENTRYPOINT=${INGRESS_ENTRYPOINT:-web}
 }
 
 ingress_http()

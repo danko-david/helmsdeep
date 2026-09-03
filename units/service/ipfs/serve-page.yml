@@ -11,15 +11,17 @@ metadata:
     ipfs_cid_pin: "${IPFS_CID_PIN}"
 spec:
   entryPoints:
-    - web
+    - ${INGRESS_ENTRYPOINT}
   routes:
   - match: Host(`${INGRESS_HOST}`)
     kind: Rule
     services:
     - name: ipfs-service
       port: 8080
+      nativeLB: true
     middlewares:
     - name: ${INGRESS_NAME}-ipfs-host-fix
+
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware

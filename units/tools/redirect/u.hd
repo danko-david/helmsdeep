@@ -1,0 +1,11 @@
+
+hd_var_defaults()
+{
+	export INGRESS_ENTRYPOINT=${INGRESS_ENTRYPOINT:-web}
+}
+
+deploy()
+{
+	_rh_try_ret_help 'Deploys redirect ingress on ${INGRESS_HOST} to ${REDIRECT_TARGET} with ${NAME}'
+	hd_env_apply_config deploy.yml
+}

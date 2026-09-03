@@ -3,6 +3,9 @@
 k()
 {
 	_rh_try_ret_help 'Shorthand runner for kubectl which can receive extra settings from ENV'
+
+	# See context: kubectl config get-contexts
+
 	# Ensure kubectl is installed and available
 	if ! command -v kubectl &> /dev/null; then
 		echo "[ERROR] 'kubectl' command line tool not found in PATH."
@@ -20,6 +23,7 @@ k()
 hd_glob_var_init()
 {
 	NAMESPACE=${NAMESPACE:-default}
+	STORAGE_CLASS=${STORAGE_CLASS:-local-path}
 }
 
 hd_manage_vars()
@@ -38,8 +42,14 @@ hd_manage_vars()
 	set +a
 }
 
+kns()
+{
+	k get ns $1 > /dev/null || k create namespace $1
+}
+
 hd_apply_config()
 {
+	kns $NAMESPACE
 	cat $HD_UNIT_DIR/$1 | envsubst | k apply -f -
 }
 

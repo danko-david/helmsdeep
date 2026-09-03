@@ -4,8 +4,9 @@ metadata:
   name: ipfs-pvc
   namespace: ${NAMESPACE}
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   resources:
     requests:
       storage: ${STORAGE_SIZE}
@@ -26,6 +27,13 @@ spec:
       labels:
         app: ipfs
     spec:
+      # TODO extract this block as optional
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+
       containers:
       - name: ipfs
         image: ipfs/kubo:latest
@@ -40,8 +48,17 @@ spec:
           mountPath: /data/ipfs
       volumes:
       - name: ipfs-data
-        persistentVolumeClaim:
-          claimName: ipfs-pvc
+        ephemeral:
+          volumeClaimTemplate:
+            metadata:
+              labels:
+                type: ipfs-local-volume
+            spec:
+              storageClassName: 'local-path'
+              accessModes: [ "ReadWriteOnce" ]
+              resources:
+                requests:
+                  storage: ${STORAGE_SIZE}
 ---
 apiVersion: v1
 kind: Service
@@ -49,6 +66,7 @@ metadata:
   name: ipfs-service
   namespace: ${NAMESPACE}
 spec:
+  internalTrafficPolicy: Local
   selector:
     app: ipfs
   ports:

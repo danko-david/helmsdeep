@@ -38,7 +38,7 @@ pin()
     # 2. Locate active IPFS DaemonSet pods running inside the cluster
     echo "[INFO] Locating running IPFS cluster pods..."
     local IPFS_PODS
-    IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    IPFS_PODS=$(k get pods -n ${NAMESPACE} -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
 
     if [ -z "${IPFS_PODS}" ]; then
         echo "[ERROR] No active IPFS daemon pods found matching label 'app=ipfs' in namespace 'default'."
@@ -58,7 +58,7 @@ pin()
             echo "    -> Queueing job inside pod: ${pod}"
             
             # Send the execution block to background (&) to populate all storage hosts simultaneously
-            k exec -i "${pod}" -n default -- ipfs pin add "${cid}" >/dev/null 2>&1 &
+            k exec -i "${pod}" -n ${NAMESPACE} -- ipfs pin add -r "${cid}" >/dev/null 2>&1 &
         done
     done
 
@@ -99,7 +99,7 @@ ipfs_gc()
     # 2. Locate active IPFS DaemonSet pods running inside the cluster
     echo "[INFO] Locating running IPFS cluster pods..."
     local IPFS_PODS
-    IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    IPFS_PODS=$(k get pods -n ${NAMESPACE} -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
 
     if [ -z "${IPFS_PODS}" ]; then
         echo "[ERROR] No active IPFS daemon pods found in namespace 'default'."
@@ -112,7 +112,7 @@ ipfs_gc()
         
         # Extract all 'recursive' pins (manually or programmatically pinned root blocks) from the pod
         local CURRENT_PINS
-        CURRENT_PINS=$(k exec -i "${pod}" -n default -- ipfs pin ls --type=recursive 2>/dev/null | awk '{print $1}')
+        CURRENT_PINS=$(k exec -i "${pod}" -n ${NAMESPACE} -- ipfs pin ls --type=recursive 2>/dev/null | awk '{print $1}')
         
         # Verify if there are active pins to analyze on the current storage host
         if [ ! -z "${CURRENT_PINS}" ]; then
@@ -120,14 +120,14 @@ ipfs_gc()
                 # Unpin any cached asset that is missing from the global K8s configuration whitelist
                 if ! echo "${VALID_CIDS}" | grep -q "${pinned_hash}"; then
                     echo "   -> [UNPIN] Orphaned CID found: ${pinned_hash}. Removing pin..."
-                    k exec -i "${pod}" -n default -- ipfs pin rm "${pinned_hash}" >/dev/null 2>&1 || true
+                    k exec -i "${pod}" -n ${NAMESPACE} -- ipfs pin rm "${pinned_hash}" >/dev/null 2>&1 || true
                 fi
             done
         fi
 
         # 4. Trigger physical repository garbage collection sequentially to manage disk I/O performance
         echo "   -> [GC] Running repository garbage collection on ${pod}..."
-        k exec -i "${pod}" -n default -- ipfs repo gc >/dev/null 2>&1
+        k exec -i "${pod}" -n ${NAMESPACE} -- ipfs repo gc >/dev/null 2>&1
         echo "   -> [SUCCESS] Node ${pod} storage successfully optimized."
     done
 
@@ -144,7 +144,7 @@ deploy_service()
 
 serve_page()
 {
-	_rh_try_ret_help 'Serve an IPFS node as site eg: $INGRESS_NAME=maven $INGRESS_HOST=maven.k8s.intra.net IPFS_CID=bafybeibamkzqsjwbvkj5igauuvliffqebdgn2ydiyqt3idpd3vh7hd55nu'
+	_rh_try_ret_help 'Serve an IPFS node as site eg: INGRESS_NAME=maven INGRESS_HOST=maven.k8s.intra.net IPFS_CID=bafybeibamkzqsjwbvkj5igauuvliffqebdgn2ydiyqt3idpd3vh7hd55nu'
 	hd_env_apply_config serve-page.yml
 }
 
@@ -219,7 +219,7 @@ deploy_folder_to_ipfs()
         
         # Locate active IPFS DaemonSet pods inside the cluster
         local IPFS_PODS
-        IPFS_PODS=$(k get pods -n default -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+        IPFS_PODS=$(k get pods -n ${NAMESPACE} -l app=ipfs -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
 
         if [ -z "$IPFS_PODS" ]; then
             echo "[ERROR] No active IPFS daemon pods found. Cannot execute pre-pinning task."
@@ -229,7 +229,7 @@ deploy_folder_to_ipfs()
         # Dispatch async pin operations simultaneously across all nodes
         for pod in $IPFS_PODS; do
             echo "   -> Async pinning CID inside pod: ${pod}..."
-            k exec -i "$pod" -n default -- ipfs pin add "$NEW_CID" >/dev/null 2>&1 &
+            k exec -i "$pod" -n ${NAMESPACE} -- ipfs pin add "$NEW_CID" >/dev/null 2>&1 &
         done
 
         # Block progress until all background execution threads conclude safely

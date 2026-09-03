@@ -10,7 +10,7 @@ metadata:
     port: "${PORT}"
 spec:
   entryPoints:
-    - web
+    - ${INGRESS_ENTRYPOINT}
   routes:
   - match: Host(`${INGRESS_HOST}`)
     kind: Rule

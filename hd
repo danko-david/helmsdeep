@@ -46,9 +46,6 @@ u()
 	shift
 
 	source $unit
-	unset u
-	unset list_units
-	unset k
 	lxe_launch_helper "$@"
 }
 
@@ -122,4 +119,14 @@ lxe_launch_helper()
 	exit 1
 }
 
-lxe_launch_helper "$@"
+hd()
+{
+	# Run helmsdeep. For internal use
+	(lxe_launch_helper "$@")
+}
+
+# call helmsdeep only if directly called, that way you can extend by source ./hd
+if [ -z "${HELMSDEEP_PREVENT_RH_CALL}" ]
+then
+	hd "$@"
+fi
