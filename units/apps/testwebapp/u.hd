@@ -3,5 +3,5 @@ deploy()
 {
 	_rh_try_ret_help 'Deploy demo web app'
 	hd_env_apply_config testwebapp.yml
-	SERVICE=demo-web-app-service PORT=80 ./hd u ingress/traefik ing_srv_short
+	SERVICE=demo-web-app-service PORT=80 hammerhand u ingress/traefik ing_srv_short
 }

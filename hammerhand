@@ -125,7 +125,13 @@ hd()
 	(lxe_launch_helper "$@")
 }
 
-# call helmsdeep only if directly called, that way you can extend by source ./hd
+hammerhand()
+{
+	# Run helmsdeep. For internal use
+	(lxe_launch_helper "$@")
+}
+
+# call helmsdeep only if directly called, that way you can extend by source ./hammerhand
 if [ -z "${HELMSDEEP_PREVENT_RH_CALL}" ]
 then
 	hd "$@"

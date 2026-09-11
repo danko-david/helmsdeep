@@ -8,5 +8,5 @@ deploy()
 {
 	_rh_try_ret_help 'Deploy static http serving of $SERVE_PATH directory with service ${NAME}-servedir-service, with $HOST ingress if specified'
 	hd_env_apply_config servedir.yml
-	SERVICE=${NAME}-servedir-service PORT=80 ./hd u ingress/traefik ing_srv_short
+	SERVICE=${NAME}-servedir-service PORT=80 hammerhand u ingress/traefik ing_srv_short
 }
