@@ -10,16 +10,18 @@ HELPER_ROOT=$(dirname $(readlink -f $0))
 
 source ${HELPER_ROOT}/lib.hd
 
+export HELMSDEEP_UNIT_EXTENSION_DIR=${HELMSDEEP_UNIT_EXTENSION_DIR:-"${HOME}/.lxe/extensions/helmsdeep/units"}
+
 list_units()
 {
 	_rh_try_ret_help 'List units'
 	find ${HELPER_ROOT}/units/ | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
 
-	if [ -d "${HOME}/.lxe/hd/units" ]
+	if [ -d $HELMSDEEP_UNIT_EXTENSION_DIR ]
 	then
 		echo ""
-		echo "Custom units in ~/.lxe/hd/units:"
-		find ${HOME}/.lxe/hd/units | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
+		echo "Custom units in $HELMSDEEP_UNIT_EXTENSION_DIR:"
+		find $HELMSDEEP_UNIT_EXTENSION_DIR | grep -oP "(?<=units/)(.*)(?=/u.hd$)"
 	fi
 }
 
@@ -29,10 +31,10 @@ u()
 	unit="${HELPER_ROOT}/units/$1/u.hd"
 	HD_UNIT_DIR="${HELPER_ROOT}/units/$1"
 
-	if [ -e "${HOME}/.lxe/hd/units/$1/u.hd" ]
+	if [ -e "$HELMSDEEP_UNIT_EXTENSION_DIR/$1/u.hd" ]
 	then
-		unit="${HOME}/.lxe/hd/units/$1/u.hd"
-		HD_UNIT_DIR="${HOME}/.lxe/hd/units/$1"
+		unit="$HELMSDEEP_UNIT_EXTENSION_DIR/$1/u.hd"
+		HD_UNIT_DIR="$HELMSDEEP_UNIT_EXTENSION_DIR/$1"
 	fi
 
 	if [ ! -e "$unit" ]
