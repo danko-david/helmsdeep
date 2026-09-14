@@ -7,4 +7,5 @@ run_cicd_test:
   rules:
     - if: $CI_COMMIT_BRANCH == "master"
   script:
+    - if [ ! -z CICD_DEBUG_CATCH ]; then tail -d /dev/null ; fi
     - bash ./cicd cicd_test
