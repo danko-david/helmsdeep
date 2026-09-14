@@ -6,11 +6,11 @@
 
 HELPER_ROOT=$(dirname $(readlink -f $0))
 
-# Uncomment if your script should run in the directory this script is located.
+export HELMSDEEP_EXTENSION_DIR_ROOT=${HELMSDEEP_EXTENSION_DIR_ROOT:-"${HOME}/.lxe/extensions/helmsdeep/"}
+export HELMSDEEP_UNIT_EXTENSION_DIR=${HELMSDEEP_UNIT_EXTENSION_DIR:-"${HELMSDEEP_EXTENSION_DIR_ROOT}/units"}
 
 source ${HELPER_ROOT}/lib.hd
-
-export HELMSDEEP_UNIT_EXTENSION_DIR=${HELMSDEEP_UNIT_EXTENSION_DIR:-"${HOME}/.lxe/extensions/helmsdeep/units"}
+source ${HELPER_ROOT}/kust.hd
 
 list_units()
 {
@@ -120,6 +120,57 @@ lxe_launch_helper()
 	help
 	exit 1
 }
+
+k()
+{
+	_rh_try_ret_help 'Shorthand runner for kubectl which can receive extra settings from ENV'
+
+	# See context: kubectl config get-contexts
+
+	# Ensure kubectl is installed and available
+	if ! command -v kubectl &> /dev/null; then
+		echo "[ERROR] 'kubectl' command line tool not found in PATH."
+		return 1
+	fi
+
+	if [ -z "$K8S_CLUSTER" ]
+	then
+		kubectl "$@"
+	else
+		kubectl --context=$K8S_CLUSTER "$@"
+	fi
+}
+
+kust()
+{
+	_rh_try_ret_help 'Prints available customizers'
+	
+cat <<EOF
+You can specify kuberentes kustomizers in KUST enviroment variable, multiple
+at one time like:
+KUST="deployment_allow_control_plane drop_ipfs_headers"
+
+Keep in mind, some customizers only available in it's own unit.
+You can add global customizers in ${HELMSDEEP_EXTENSION_DIR_ROOT}/kust.hd
+
+Available kustomizers:
+
+EOF
+
+	RH_RUNTIME_REQUEST_HELP=true
+
+	for f in ${RH_FUNCTIONS[@]}
+	do
+		# if the command has help
+		if type $f | grep -qzP '{\s+_kust_try_ret_help '
+		then
+			echo -e "\t$f - "$($f)
+		fi
+	done
+}
+
+
+################################ CLI LAUNCH AREA ###############################
 
 hd()
 {

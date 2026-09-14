@@ -1,25 +1,5 @@
 #!/bin/bash
 
-k()
-{
-	_rh_try_ret_help 'Shorthand runner for kubectl which can receive extra settings from ENV'
-
-	# See context: kubectl config get-contexts
-
-	# Ensure kubectl is installed and available
-	if ! command -v kubectl &> /dev/null; then
-		echo "[ERROR] 'kubectl' command line tool not found in PATH."
-		return 1
-	fi
-
-	if [ -z "$K8S_CLUSTER" ]
-	then
-		kubectl "$@"
-	else
-		kubectl --context=$K8S_CLUSTER "$@"
-	fi
-}
-
 hd_glob_var_init()
 {
 	NAMESPACE=${NAMESPACE:-default}
@@ -34,10 +14,7 @@ hd_manage_vars()
 		hd_var_defaults
 	fi
 
-	if [ "function" = "$(type -t hd_glob_var_init)" ]
-	then
-		hd_glob_var_init
-	fi
+	hd_glob_var_init
 
 	set +a
 }
@@ -49,8 +26,61 @@ kns()
 
 hd_apply_config()
 {
+	# ensure namespace created
 	kns $NAMESPACE
-	cat $HD_UNIT_DIR/$1 | envsubst | k apply -f -
+	
+	if [ ! -z "$HD_STRICT" ]
+	then
+		set -e
+		trap 'rm -rf $HD_KUSTOMISATION_DIR' exit
+	fi
+
+	# if no customization set, run the plain method
+	if [ -z $KUST ]
+	then
+		cat $HD_UNIT_DIR/$1 | envsubst | k apply -f -
+		return
+	fi
+
+	export HD_KUSTOMISATION_DIR=$(mktemp -d)
+	export HD_KUSTOMISATION_FILE="${HD_KUSTOMISATION_DIR}/patch.yaml"
+	:> $HD_KUSTOMISATION_FILE
+
+	cat $HD_UNIT_DIR/$1 | envsubst > "$HD_KUSTOMISATION_DIR/base.yaml"
+
+	cat <<EOF > "$HD_KUSTOMISATION_DIR/kustomization.yaml"
+resources:
+  - base.yaml
+patches:
+  - path: patch.yaml
+EOF
+
+    for KST in $KUST
+    do
+		if declare -f "kust_$KST" > /dev/null; then
+			"kust_$KST"
+		else
+			if [ -z "$HD_STRICT" ]
+			then
+				echo "Warning: Customizer 'kust_$KST' does not exists" >&2
+			else
+				echo "ERROR: Customizer 'kust_$KST' does not exists" >&2
+				exit 1
+			fi
+		fi
+	done
+
+	# in strict mode, run anyaway (and let fail)
+	if [ ! -z "$HD_STRICT" ] || [ -s $HD_KUSTOMISATION_FILE ]
+	then
+		k kustomize "$HD_KUSTOMISATION_DIR" | k apply -f -
+
+	else # in non strict way patch may be empty and run the apply only
+		cat $HD_UNIT_DIR/$1 | envsubst | k apply -f -
+	fi
+
+	rm -rf "$HD_KUSTOMISATION_DIR"
+	trap '' exit
 }
 
 hd_env_apply_config()
@@ -58,3 +88,4 @@ hd_env_apply_config()
 	hd_manage_vars
 	hd_apply_config $1
 }
+

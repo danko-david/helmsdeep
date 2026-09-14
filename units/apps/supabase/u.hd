@@ -1,13 +1,10 @@
 
-hd_prepare()
-{
-	helm repo add supabase https://supabase-community.github.io/supabase-kubernetes
-	helm repo update
-}
-
 deploy()
 {
 	_rh_try_ret_help 'Deploy supabase with default configs'
-	helm install supabase-demo supabase/supabase --namespace default
+	helm repo add supabase https://supabase-community.github.io/supabase-kubernetes
+	helm repo update
+	hd_manage_vars
+	helm upgrade --install supabase-demo supabase/supabase --namespace ${NAMESPACE}
 	# -f supabase-values.yml
 }

@@ -7,6 +7,6 @@ deploy()
 	then
 		echo "HOST_BASE not set, skip add ingress."
 	else
-		HOST="app.${HOST_BASE}" SERVICE=vprofile-app-service PORT=8080 ./hd u ingress/traefik ing_srv_short
+		HOST="app.${HOST_BASE}" SERVICE=vprofile-app-service PORT=8080 hammerhand u ingress/traefik ing_srv_short
 	fi
 }

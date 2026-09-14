@@ -27,13 +27,6 @@ spec:
       labels:
         app: ipfs
     spec:
-      # TODO extract this block as optional
-      tolerations:
-      - key: "node-role.kubernetes.io/control-plane"
-        operator: "Exists"
-        effect: "NoSchedule"
-
-
       containers:
       - name: ipfs
         image: ipfs/kubo:latest
@@ -54,7 +47,7 @@ spec:
               labels:
                 type: ipfs-local-volume
             spec:
-              storageClassName: 'local-path'
+              storageClassName: '${STORAGE_CLASS}'
               accessModes: [ "ReadWriteOnce" ]
               resources:
                 requests:

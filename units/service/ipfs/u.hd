@@ -3,7 +3,8 @@ hd_var_defaults()
 {
 	IPFS_CID_TYPE=${IPFS_CID_TYPE:-ipfs}
 	IPFS_CID_PIN=${IPFS_CID_PIN:-true}
-    export STORAGE_SIZE=${STORAGE_SIZE:-20Gi}
+    STORAGE_SIZE=${STORAGE_SIZE:-20Gi}
+    INGRESS_ENTRYPOINT=${INGRESS_ENTRYPOINT:-web}
 }
 
 pin()
@@ -253,4 +254,27 @@ deploy_folder_to_ipfs()
     echo "[SUCCESS] LIVE DEPLOYMENT FINALIZED!"
     echo "[SUCCESS] URL: http://${INGRESS_HOST}"
     echo "=========================================================="
+}
+
+kust_drop_ipfs_headers()
+{
+    _kust_try_ret_help 'Customizer used to drop IPFS HTTP headers in serve_page responses'
+
+    cat << EOF >> $HD_KUSTOMISATION_FILE
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${INGRESS_NAME}-ipfs-host-fix
+  namespace: ${NAMESPACE}
+spec:
+  headers:
+    customResponseHeaders:
+      X-Ipfs-Path: ""
+      X-Ipfs-Roots: ""
+      X-Chunked-Output: ""
+      X-Stream-Output: ""
+      Etag: ""
+EOF
+
 }

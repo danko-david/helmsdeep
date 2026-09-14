@@ -1,0 +1,6 @@
+
+deploy()
+{
+    _rh_try_ret_help 'Deploy rancher local-path storage provisioner'
+    k apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.35/deploy/local-path-storage.yaml
+}

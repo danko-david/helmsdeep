@@ -1,0 +1,59 @@
+
+# load user's cusom kustomizers if present
+if [ -e ${HELMSDEEP_EXTENSION_DIR_ROOT}/kust.hd ]
+then
+  source ${HELMSDEEP_EXTENSION_DIR_ROOT}/kust.hd
+fi
+
+_kust_try_ret_help()
+{
+	if [ ! -z $RH_RUNTIME_REQUEST_HELP ]
+	then
+		echo $1
+		exit 1;
+	fi
+}
+
+kust_ds_allow_control_plane()
+{
+	_kust_try_ret_help 'Allow schedule on control plane in DaemonSet'
+
+    cat << EOF >> $HD_KUSTOMISATION_FILE
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+EOF
+}
+
+kust_deployment_allow_control_plane()
+{
+	_kust_try_ret_help 'Allow schedule on control plane in Deploment'
+
+    cat << EOF >> $HD_KUSTOMISATION_FILE
+---
+apiVersion: apps/v1
+kind: Deploment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+EOF
+}
+
+
+
+

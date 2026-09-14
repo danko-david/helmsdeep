@@ -40,3 +40,17 @@ spec:
       Host: "${IPFS_CID}.${IPFS_CID_TYPE}.localhost:8080"
       X-Forwarded-Host: "${IPFS_CID}.${IPFS_CID_TYPE}.localhost:8080"
       X-Forwarded-For: "${INGRESS_HOST}"
+    customResponseHeaders:
+      # Dont screw up on cache
+      Cache-Control: "no-cache, must-revalidate"
+      
+      # drop unecessary IPFS headers
+      X-Ipfs-Path: ""
+      X-Ipfs-Roots: ""
+      X-Chunked-Output: ""
+      X-Stream-Output: ""
+      
+      Access-Control-Allow-Origin: ""
+      Access-Control-Allow-Methods: ""
+      Access-Control-Allow-Headers: ""
+      Access-Control-Expose-Headers: ""
