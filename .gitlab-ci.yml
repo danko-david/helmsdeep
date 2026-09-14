@@ -1,0 +1,10 @@
+stages:
+  - test
+
+run_cicd_test:
+  stage: test
+  image: lxeu/devops-build-image:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  script:
+    - bash ./cicd cicd_test
