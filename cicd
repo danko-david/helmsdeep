@@ -1,0 +1,137 @@
+#!/bin/bash
+
+# Global vars
+export DOMAIN_ROOT=k8s.local.net
+
+
+cicd_launch_tmp_container()
+{
+	_rh_try_ret_help 'For local testing: launch a temporary docker container and mount codebase. Used to develop CI/CD operations'
+	docker run --rm -it --privileged --cgroupns=host -v containerd:/var/lib/containerd -v docker:/var/lib/docker -v $HELPER_ROOT:/code lxeu/devops-build-image bash
+}
+
+cicd_prepare()
+{
+	_rh_try_ret_help 'Initialize empty test environment: install and init kind'
+	set -e
+	service docker start || true
+	i=10
+	while ! docker ps && [ $i -gt 0 ]
+	do
+		echo "Waiting docker to start: $i"
+		i=$(expr $i - 1)
+		sleep 1;
+	done
+
+	echo "Install kind"
+	go install sigs.k8s.io/kind@v0.33.0
+	echo "Create cluster"
+	/root/go/bin/kind create cluster
+}
+
+cicd_deploy_samples()
+{
+	_rh_try_ret_help 'Deploy k8s units'
+	set -e
+	
+	# Deploy localpath PVC
+	hammerhand u storage/local-path deploy
+
+	# deploys plain HTTP ingress as daemonset.
+	hammerhand u ingress/traefik ingress_http
+	# deploys a debug container with debug services
+	hammerhand u dev/debug deploy_devops
+
+	# deploys an image registry, you can push and pull images to the node and expose on host's tcp/5000 port
+	hammerhand u service/registry deploy_registry
+	TYPE=TCP PORT=5000 SERVICE=registry-service SERVICE_PORT=5000 hammerhand u ingress/serviceport ingress_port
+
+	# ipfs: install IPFS as core service
+	hammerhand u service/ipfs deploy_service
+
+	# deploy javaexperience maven repo (sserve static files)
+	INGRESS_NAME=maven INGRESS_HOST=maven.${DOMAIN_ROOT} IPFS_CID=bafybeibamkzqsjwbvkj5igauuvliffqebdgn2ydiyqt3idpd3vh7hd55nu hammerhand u service/ipfs serve_page
+
+	# Serve szabilinux.hu website
+	INGRESS_NAME=szabilinux INGRESS_HOST=szabilinux.${DOMAIN_ROOT} IPFS_CID=bafybeig2i4gtt6azojl32noco3ov6e6o7qaxasu2q32qlzssvcgdw3kdbi hammerhand u service/ipfs serve_page
+
+	# Open up IPFS endpoint, you can directly access http://ipfs.${DOMAIN_ROOT}/ipfs/$CID
+	INGRESS_NAME=ipfs-direct-gateway INGRESS_HOST=ipfs.${DOMAIN_ROOT} SERVICE=ipfs-service PORT=8080 hammerhand u ingress/traefik ing_srv_host
+
+	# deploys a supabase stack and set up ingress
+	hammerhand u apps/supabase deploy
+	INGRESS_NAME=supabase-studio INGRESS_HOST=supabase-studio.${DOMAIN_ROOT} SERVICE=supabase-demo-supabase-studio PORT=3000 hammerhand u ingress/traefik ing_srv_host
+	INGRESS_NAME=supabase-studio-api INGRESS_HOST=supabase-api.${DOMAIN_ROOT} SERVICE=supabase-demo-supabase-kong PORT=8000 hammerhand u ingress/traefik ing_srv_host
+
+	# deploys a testapp
+	HOST=test.${DOMAIN_ROOT} hd u apps/testwebapp deploy
+
+	# deploys static file hosting
+	HOST=files.${DOMAIN_ROOT} NAME=files DIR_LISTING=true SERVE_PATH=/static_files hammerhand u tools/servedir deploy
+}
+
+test_url()
+{
+	ret=$(curl --fail -I $1 2>&1)
+	ex=$?
+	if [ $ex != 0 ]
+	then
+		echo "URL failed: $1"
+		echo $ret
+		exit $ex
+	fi
+}
+
+cicd_test_deploy_samples()
+{
+	_rh_try_ret_help 'Run tests after deploy. Warning: it modifies /etc/hosts!'
+
+	PLAIN_HTTP_ENDS="maven szabilinux supabase-studio files"
+	ETC_ADDR="ipfs"
+
+	IP=$(docker exec -it kind-control-plane hostname -i  | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+
+	for addr in ${PLAIN_HTTP_ENDS[@]} ${ETC_ADDR[@]}
+	do
+		echo "$IP ${addr}.${DOMAIN_ROOT}" >> /etc/hosts
+	done
+
+	for addr in ${PLAIN_HTTP_ENDS[@]}
+	do
+		test_url http://${addr}.${DOMAIN_ROOT}
+	done
+
+	# other tests
+		## test registry
+		test_url http://ipfs.${DOMAIN_ROOT}:5000
+		
+		## test IPFS endpoint
+		test_url http://ipfs.${DOMAIN_ROOT}/ipfs/QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn
+
+}
+
+cicd_teardown()
+{
+	_rh_try_ret_help 'Clean up environment after run'
+	/root/go/bin/kind delete cluster
+}
+
+cicd_test()
+{
+	_rh_try_ret_help 'Main entry point for CI/CD testing'
+	echo "Register exit cleanup handler"
+	trap cicd_teardown EXIT
+
+	echo "Prepare environent"
+	cicd_prepare
+	
+	echo "Deploy samples"
+	cicd_deploy_samples
+
+	echo "Test deployments"
+	cicd_test_deploy_samples
+
+	echo "Everything is fine"
+}
+
+source hammerhand
